@@ -1,6 +1,7 @@
 """
 Modular GridWorld Environment with Smooth Animation
 A clean, parametrized framework for reinforcement learning.
+Optional gymnasium compatibility if installed.
 """
 
 import numpy as np
@@ -8,10 +9,32 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import random
 
+# Try to import gymnasium, but don't fail if it's not installed
+try:
+    import gymnasium as gym
+    from gymnasium import spaces
+    GYM_AVAILABLE = True
+except ImportError:
+    GYM_AVAILABLE = False
+    gym = None
+    spaces = None
 
-class GridWorldEnv:
+
+# Base class that may or may not inherit from gym.Env
+if GYM_AVAILABLE:
+    BaseClass = gym.Env
+else:
+    BaseClass = object
+
+
+class GridWorldEnv(BaseClass):
     """
     Customizable grid world environment.
+    
+    **GYMNASIUM-COMPATIBLE**: If gymnasium is installed, this class automatically
+    becomes a valid Gym environment with action_space and observation_space.
+    
+    **BACKWARD-COMPATIBLE**: Existing code that doesn't use gymnasium will work exactly as before.
     
     Parameters:
         grid_size (int): Size of the square grid (used if width/height not specified)
@@ -23,10 +46,19 @@ class GridWorldEnv:
         reward_goal (float): Reward for reaching a goal
         reward_step (float): Reward per step (usually negative)
         max_steps (int): Maximum steps per episode
+        state_type (str): 'absolute' returns [row, col], 'relative' returns [dx, dy]
     """
     
+    # Gymnasium metadata
+    metadata = {'render_modes': ['human'], 'render_fps': 4}
+    
     def __init__(self, grid_size=5, width=None, height=None, goals=None, start_pos=None, 
-                 obstacles=None, reward_goal=10.0, reward_step=-0.1, max_steps=50):
+                 obstacles=None, reward_goal=10.0, reward_step=-0.1, max_steps=50,
+                 state_type='absolute'):
+        
+        # Initialize parent class if using Gymnasium
+        if GYM_AVAILABLE:
+            super().__init__()
         
         # Handle rectangular grids: if width/height not specified, use grid_size
         self.width = width if width is not None else grid_size
@@ -51,6 +83,7 @@ class GridWorldEnv:
         self.reward_step = reward_step
         self.max_steps = max_steps
         self.num_actions = 4  # UP, RIGHT, DOWN, LEFT
+        self.state_type = state_type
         
         self.agent_pos = None
         self.episode_steps = 0
@@ -59,12 +92,43 @@ class GridWorldEnv:
         self.fig = None
         self.ax = None
         self.agent_patch = None
+        
+        # Define Gymnasium spaces if available
+        if GYM_AVAILABLE:
+            self.action_space = spaces.Discrete(4)
+            
+            if state_type == 'relative':
+                # Relative state: (dx, dy)
+                self.observation_space = spaces.Box(
+                    low=-max(self.height, self.width),
+                    high=max(self.height, self.width),
+                    shape=(2,),
+                    dtype=np.float32
+                )
+            else:
+                # Absolute state: [row, col]
+                self.observation_space = spaces.Box(
+                    low=0,
+                    high=max(self.height, self.width),
+                    shape=(2,),
+                    dtype=np.float32
+                )
     
-    def reset(self, seed=None):
-        """Start a new episode."""
+    def reset(self, seed=None, options=None):
+        """
+        Start a new episode.
+        
+        Returns:
+            observation: Agent position (format depends on state_type)
+            info: Dictionary with additional information
+        """
         if seed is not None:
             np.random.seed(seed)
-            random.seed(seed)  # FIX: Also seed Python's random module
+            random.seed(seed)
+        
+        # Gymnasium-style reset with options
+        if GYM_AVAILABLE and hasattr(super(), 'reset'):
+            super().reset(seed=seed)
         
         # Set starting position
         if self.start_pos is not None:
@@ -81,7 +145,9 @@ class GridWorldEnv:
         
         self.episode_steps = 0
         
-        observation = list(self.agent_pos)
+        # Get observation based on state_type
+        observation = self._get_observation()
+        
         info = {
             'distance_to_goal': self._min_distance_to_goal(),
             'episode_steps': self.episode_steps
@@ -90,7 +156,16 @@ class GridWorldEnv:
         return observation, info
     
     def step(self, action):
-        """Execute one action."""
+        """
+        Execute one action.
+        
+        Returns:
+            observation: Agent position (format depends on state_type)
+            reward: Reward for this step
+            terminated: Whether episode ended (reached goal)
+            truncated: Whether episode was cut off (max steps)
+            info: Additional information
+        """
         if action < 0 or action >= self.num_actions:
             raise ValueError(f"Invalid action {action}")
         
@@ -120,13 +195,32 @@ class GridWorldEnv:
         # Calculate reward
         reward = self.reward_goal if terminated else self.reward_step
         
-        observation = list(self.agent_pos)
+        # Get observation based on state_type
+        observation = self._get_observation()
+        
         info = {
             'distance_to_goal': self._min_distance_to_goal(),
             'episode_steps': self.episode_steps
         }
         
         return observation, reward, terminated, truncated, info
+    
+    def _get_observation(self):
+        """Get observation based on state_type setting"""
+        if self.state_type == 'relative':
+            # Relative state: (dx, dy) to nearest goal
+            goal_pos = self.goals[0]  # Use first goal
+            dx = goal_pos[1] - self.agent_pos[1]
+            dy = goal_pos[0] - self.agent_pos[0]
+            obs = [dx, dy]
+        else:
+            # Absolute state: [row, col]
+            obs = list(self.agent_pos)
+        
+        # Convert to numpy array if Gymnasium is available
+        if GYM_AVAILABLE:
+            return np.array(obs, dtype=np.float32)
+        return obs
     
     def render_init(self):
         """Initialize the rendering window (call once at start)."""
@@ -293,7 +387,7 @@ def run_episode(env, agent_policy='random', render=False, seed=None, delay=0.5):
     """
     if seed is not None:
         random.seed(seed)
-        np.random.seed(seed)  # FIX: Also seed numpy
+        np.random.seed(seed)
     
     observation, info = env.reset(seed=seed)
     total_reward = 0
@@ -348,9 +442,17 @@ if __name__ == "__main__":
     
     print("GridWorld Environment - Smooth Animation - Press Ctrl+C at any time to stop\n")
     
+    if GYM_AVAILABLE:
+        print("✓ Gymnasium detected - This environment is Gym-compatible!")
+        print(f"  Action space: Discrete(4)")
+        print(f"  Observation space: Box (depends on state_type)\n")
+    else:
+        print("ℹ Gymnasium not installed - Using standalone mode")
+        print("  Install with: pip install gymnasium\n")
+    
     try:
-        # Example 1: Simple environment with 1 goal (backward compatible - square grid)
-        print("Example 1: Basic GridWorld (5x5)")
+        # Example 1: Basic GridWorld (backward compatible)
+        print("Example 1: Basic GridWorld (5x5) - Absolute state")
         env = GridWorldEnv(
             grid_size=5,
             goals=[4, 4],
@@ -361,49 +463,25 @@ if __name__ == "__main__":
             print(f"Result: {result}\n")
         env.close()
         
-        # Example 2: Rectangular grid (10 wide x 5 tall)
-        print("Example 2: Rectangular Grid (10x5)")
+        # Example 2: With relative state (for DQN with moving goals)
+        print("Example 2: GridWorld with Relative State (dx, dy)")
         env = GridWorldEnv(
-            width=10,
-            height=5,
-            goals=[[4, 9]],
-            start_pos=[0, 0]
-        )
-        result = run_episode(env, render=True, delay=0.2, seed=42)
-        if result:
-            print(f"Result: {result}\n")
-        env.close()
-        
-        # Example 3: With obstacles (backward compatible)
-        print("Example 3: With Obstacles (8x8)")
-        env = GridWorldEnv(
-            grid_size=8,
-            goals=[[7, 7]],
+            grid_size=7,
+            goals=[[6, 6]],
             start_pos=[0, 0],
-            obstacles=[[2, 2], [2, 3], [2, 4], [5, 5], [5, 6]]
+            obstacles=[[2, 2], [2, 3], [2, 4]],
+            state_type='relative'  # NEW: Returns (dx, dy) instead of (row, col)
         )
+        
+        if GYM_AVAILABLE:
+            print(f"  Observation space: {env.observation_space}")
+            print(f"  Action space: {env.action_space}")
+        
         result = run_episode(env, render=True, delay=0.2, seed=42)
         if result:
             print(f"Result: {result}\n")
         env.close()
         
-        # Example 4: Rectangular with obstacles (15 wide x 8 tall)
-        print("Example 4: Wide Rectangular Grid (15x8)")
-        env = GridWorldEnv(
-            width=15,
-            height=8,
-            goals=[[7, 14], [0, 14]],
-            start_pos=None,  # Random start
-            obstacles=[[3, i] for i in range(7)] + [[5, i] for i in range(8, 15)],
-            reward_goal=100.0,
-            reward_step=-1.0,
-            max_steps=100
-        )
-        result = run_episode(env, render=True, delay=0.1, seed=42)
-        if result:
-            print(f"Result: {result}")
-        env.close()
-    
     except KeyboardInterrupt:
         print("\n\nProgram stopped by user")
     
