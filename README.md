@@ -16,7 +16,7 @@ It is still **under active development**, with many components and improvements 
 
 ---
 
-## 🧠 Features (Planned & In Progress)
+## 🧠 Features
 
 - **Customizable Environments**  
   - Adjustable grid size, obstacles, and goal positions.  
