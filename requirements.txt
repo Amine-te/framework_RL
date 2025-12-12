@@ -1,0 +1,16 @@
+# Core dependencies
+numpy>=1.20.0
+matplotlib>=3.3.0
+
+# Deep Learning (for DQN scripts)
+# NOTE: This installs CPU-only PyTorch by default
+# For GPU support, see installation instructions in README.md
+torch>=1.9.0
+
+# Stable-Baselines3 (for deep_q_learning_stable_baseline3.py)
+stable-baselines3>=2.0.0
+gymnasium>=0.28.0
+
+# Image processing (for GIF generation in test_ql_agents.py)
+Pillow>=8.0.0
+
