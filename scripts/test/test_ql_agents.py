@@ -87,7 +87,7 @@ def find_agent_files(agents_dir, agent_patterns=None):
         # Parse pattern like "g5_a0.3_gm0.99" -> grid=5, alpha=0.3, gamma=0.99
         pattern_match = re.match(r'g(\d+)_a([\d.]+)_gm([\d.]+)', pattern)
         if not pattern_match:
-            print(f"Warning: Invalid pattern format '{pattern}'. Expected format: g{size}_a{alpha}_gm{gamma}")
+            print(f"Warning: Invalid pattern format '{pattern}'. Expected format: g{{size}}_a{{alpha}}_gm{{gamma}}")
             continue
         
         target_grid = int(pattern_match.group(1))
